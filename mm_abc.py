@@ -10,8 +10,6 @@ from six.moves import input
 import sys
 import csv
 
-# import matplotlib.pyplot as plt
-# import matplotlib.mlab as mlab
 
 # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 # MICHAELIS-MENTEN KINETICS
@@ -25,6 +23,7 @@ def f(args, r, t, theta):
 
     return fPd
 
+
 # RUNGE-KUTTA METHOD
 def rk4(args, r, t, theta):
     """ Runge-Kutta 4 method """
@@ -34,9 +33,11 @@ def rk4(args, r, t, theta):
     k4 = args["h"]*f(args, r+k3, t+args["h"], theta)
     return (k1 + 2*k2 + 2*k3 + k4)/6
 
+
 # NORM 1 DISTANCE
 def norm1_distance(u, v):
     return norm(u - v, 1, axis=1)
+
 
 # Run simulation
 def run_simulation(args, t_points, theta):
@@ -55,6 +56,7 @@ def run_simulation(args, t_points, theta):
         r += rk4(args, r, t, theta)
 
     return P
+
 
 # LOADING DATA
 def load_data(args, row_value=0):
@@ -95,22 +97,6 @@ def load_data(args, row_value=0):
 
     return P_real, t_points
 
-# SMOOTHING DATA
-def smooth_data(args, t_points, P_real):
-    # linear function
-    def fun(x, a):
-        return a*x
-
-    # fitting
-    x = expand_dims( t_points, 1 )
-    y = expand_dims( P_real[0,:], 1 )
-    I = 0.0000001*diag( ones(shape=(x.shape[1],) ) )
-
-    a = squeeze(dot( dot( pinv( dot(x.T, x) + I ), x.T ), y), 1)
-
-    # smoothed data
-    P_fit = repeat( expand_dims(fun(t_points, a),0), args['N'], axis=0 )
-    return P_fit
 
 # ABC PROCEDURE
 def abc_procedure(args, P_real, t_point):
@@ -170,27 +156,6 @@ def abc_procedure(args, P_real, t_point):
 
     return accepted_theta
 
-def find_K_M(args, k_cat, k_cat_std):
-    P_raw, t = load_data(args, row_value=1)
-    P = smooth_data(args, t, P_raw)
-
-    v = tan( P[0,10] / t[10] )
-
-    V_max = k_cat*60.*args['E_0']
-    V_max_low = (k_cat-3.*k_cat_std)*60.*args['E_0']
-    V_max_high = (k_cat+3.*k_cat_std)*60.*args['E_0']
-
-    # NON-LINEAR
-    b = -log(1.-v/V_max) / args['S_1']
-    K_M_h = -log(1.-(V_max/2.)/(V_max)) / b
-
-    b_low = -log(1.-v/V_max_low) / args['S_1']
-    K_M_h_low = -log(1.-(V_max_low/2.)/(V_max_low)) / b_low
-
-    b_high = -log(1.-v/V_max_high) / args['S_1']
-    K_M_h_high = -log(1.-(V_max_high/2.)/(V_max_high)) / b_high
-
-    return K_M_h, K_M_h_low, K_M_h_high
 
 # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 def config2args(config):
@@ -198,7 +163,6 @@ def config2args(config):
     args['file'] = str(config["file_name"]["file"])
     args['E_0'] = float(config["experiment_details"]["E_0"])
     args['S_0'] = float(config["experiment_details"]["S_0"])
-    args['S_1'] = float(config["experiment_details"]["S_1"])
     args['h'] = float(config["experiment_details"]["h"]) / 60.
     args['exp_last'] = float(config["experiment_details"]["exp_last"])
 
@@ -222,14 +186,13 @@ def main( ):
 
     args = config2args(config)
 
-    P, t = load_data(args)
-    P_real = smooth_data(args, t, P)
+    P_real, t = load_data(args)
 
     accepted_theta = abc_procedure(args, P_real, t)
     if accepted_theta.shape[0] == 0:
         raise Exception('There is no result found. Please check the following points:\n'
                         '1. Is the data properly provided?\n'
-                        '2. Is the experiment set-up (E_0, S_0, S_1, h and exp_last) properly provided?\n'
+                        '2. Is the experiment set-up (E_0, S_0, h and exp_last) properly provided?\n'
                         '3. Please consider higher or lower values of high_K_M and high_k_cat. It might be that the real '
                         'value is outside one of these numbers. Please remember also that if you have any prior knowledge '
                         'about possible values of K_M or/and k_cat, better low and high values will drastically improve'
@@ -241,23 +204,21 @@ def main( ):
         k_cat_mean = mean(accepted_theta[:,[1]], 0, keepdims=False)
         k_cat_std = std(accepted_theta[:,[1]], 0, keepdims=False)
 
-        K_M_h, K_M_h_low, K_M_h_high = find_K_M(args, k_cat=k_cat_mean[0], k_cat_std=k_cat_std[0])
-
         print('\n--Final results--\n'
               'k_cat\n'
               '> mean: {:.3f}\n'
-              '> mean - 3*std: {:.3f}\n'
-              '> mean + 3*std: {:.3f}\n\n'
+              '> mean - std: {:.3f}\n'
+              '> mean + std: {:.3f}\n\n'
               'K_M\n'
               '> mean: {:.3f}\n'
-              '> mean - 3*std: {:.3f}\n'
-              '> mean + 3*std: {:.3f}'.format(
+              '> mean - std: {:.3f}\n'
+              '> mean + std: {:.3f}'.format(
             k_cat_mean[0],
-            k_cat_mean[0] - 3 * k_cat_std[0],
-            k_cat_mean[0] + 3 * k_cat_std[0],
-            K_M_h,
-            K_M_h_low,
-            K_M_h_high))
+            k_cat_mean[0] -  k_cat_std[0],
+            k_cat_mean[0] +  k_cat_std[0],
+            K_M_mean[0],
+            K_M_mean[0] - K_M_std[0],
+            K_M_mean[0] + K_M_std[0]))
 
         with open('results.txt', 'a') as f:
             date = strftime("%a, %d %b %Y %H:%M:%S", gmtime())
@@ -265,20 +226,20 @@ def main( ):
             '--Final results--\n'
             'k_cat\n'
             '> mean: {:.3f}\n'
-            '> mean - 3*std: {:.3f}\n'
-            '> mean + 3*std: {:.3f}\n\n'
+            '> mean - std: {:.3f}\n'
+            '> mean + std: {:.3f}\n\n'
             'K_M\n'
             '> mean: {:.3f}\n'
-            '> mean - 3*std: {:.3f}\n'
-            '> mean + 3*std: {:.3f}\n'.format(
+            '> mean - std: {:.3f}\n'
+            '> mean + std: {:.3f}\n'.format(
                 file,
                 date,
                 k_cat_mean[0],
-                k_cat_mean[0] - 3 * k_cat_std[0],
-                k_cat_mean[0] + 3 * k_cat_std[0],
-                K_M_h,
-                K_M_h_low,
-                K_M_h_high),
+                k_cat_mean[0] - k_cat_std[0],
+                k_cat_mean[0] + k_cat_std[0],
+                K_M_mean[0],
+                K_M_mean[0] - K_M_std[0],
+                K_M_mean[0] + K_M_std[0]),
                 file=f)
 
 if __name__ == "__main__":
